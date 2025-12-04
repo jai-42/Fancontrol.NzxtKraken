@@ -34,11 +34,11 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="FanControl.Plugins">
-      <HintPath>..\..\Documents\FanControl\FanControl.Plugins.dll</HintPath>
+      <HintPath>..\OneDrive\Documents\FanControl\FanControl.Plugins.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="HidSharp">
-      <HintPath>..\..\Documents\FanControl\HidSharp.dll</HintPath>
+      <HintPath>..\OneDrive\Documents\FanControl\HidSharp.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="System" />
