@@ -157,4 +157,19 @@ namespace FanControl.NzxtKraken
             return Array.Exists(new int[] { 0x3012 }, i => i == hidDevice.ProductID);
         }
     }
+
+    internal class NzxtKrakenPlusV2 : NzxtKrakenZ3
+    {
+        internal override string Name => "Kraken Plus V2";
+        internal override byte[] PumpControlHeader => new byte[] { 0x1, 0x1, 0x0 };
+
+        internal override byte[] FanControlHeader => new byte[] { 0x2, 0x1, 0x1 };
+        public NzxtKrakenPlusV2(HidDevice hidDevice, IPluginLogger pluginLogger, IPluginSensorsContainer container) : base(hidDevice, pluginLogger, container)
+        { }
+
+        public static new bool SupportsDevice(HidDevice hidDevice)
+        {
+            return Array.Exists(new int[] { 0x3014 }, i => i == hidDevice.ProductID);
+        }
+    }
 }
