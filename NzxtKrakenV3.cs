@@ -17,10 +17,12 @@ namespace FanControl.NzxtKraken
         HidDevice _hidDevice;
         int _minValue;
         byte[] _packet;
-        public KrakenControlV3(string id, string name, float resetValue, int minValue, HidDevice hidDevice, byte[] channelData) : base(id, name, resetValue)
+        IPluginLogger _logger;
+        public KrakenControlV3(string id, string name, float resetValue, int minValue, HidDevice hidDevice, byte[] channelData, IPluginLogger logger) : base(id, name, resetValue)
         {
             _hidDevice = hidDevice;
             _minValue = minValue;
+            _logger = logger;
             _packet = new byte[44];
             _packet[0] = 0x72;
             _packet[1] = channelData[0];
@@ -30,11 +32,20 @@ namespace FanControl.NzxtKraken
 
         public override void Set(float val)
         {
-            _hidDevice.TryOpen(out HidStream stream);
-            var speed = Math.Min(Math.Max((int)val, _minValue), 100);
-            for (int i = 0; i < 40; i++) _packet[i + 4] = (byte)speed;
-            stream.Write(_packet);
-            stream.Close();
+            try
+            {
+                if (!_hidDevice.TryOpen(out HidStream stream) || stream == null)
+                    return;
+
+                var speed = Math.Min(Math.Max((int)val, _minValue), 100);
+                for (int i = 0; i < 40; i++) _packet[i + 4] = (byte)speed;
+                stream.Write(_packet);
+                stream.Close();
+            }
+            catch
+            {
+                // Silently ignore communication errors
+            }
         }
     }
 
@@ -55,21 +66,53 @@ namespace FanControl.NzxtKraken
             pumpSpeed = new KrakenSensor($"pumprpm-{_serial}", $"Pump - {Name}");
             _container.FanSensors.Add(pumpSpeed);
 
-            pumpControl = new KrakenControlV3($"pumpcontrol-{_serial}", $"Pump - {Name}", 60, 20, hidDevice, PumpControlHeader);
+            pumpControl = new KrakenControlV3($"pumpcontrol-{_serial}", $"Pump - {Name}", 60, 20, hidDevice, PumpControlHeader, pluginLogger);
             _container.ControlSensors.Add(pumpControl);
         }
 
         public override void Update()
         {
-            _hidDevice.TryOpen(out HidStream stream);
-            stream.Write(new byte[] { 0x74, 0x01 });
-            var packet = stream.Read();
-            SetValues(packet);
-            stream.Close();
+            for (int attempt = 0; attempt < 2; attempt++)
+            {
+                HidStream stream = null;
+                try
+                {
+                    if (!_hidDevice.TryOpen(out stream) || stream == null)
+                    {
+                        if (attempt == 1)
+                            _logger?.Log($"{Name}: Failed to open device after retry");
+                        continue;
+                    }
+
+                    stream.Write(new byte[] { 0x74, 0x01 });
+                    var packet = stream.Read();
+                    
+                    if (packet != null && packet.Length >= 20)
+                    {
+                        SetValues(packet);
+                        stream.Close();
+                        return; // Success
+                    }
+                    
+                    if (attempt == 1)
+                        _logger?.Log($"{Name}: Invalid packet received");
+                    
+                    stream.Close();
+                }
+                catch (Exception ex)
+                {
+                    if (attempt == 1)
+                        _logger?.Log($"{Name}: Update error - {ex.Message}");
+                    stream?.Close();
+                }
+            }
         }
 
         internal virtual void SetValues(byte[] packet)
         {
+            if (packet == null || packet.Length < 20)
+                return;
+                
             liquidTemperature.SetValue(packet[15] + (float)packet[16] / 10);
             pumpSpeed.SetValue(packet[18] << 8 | packet[17]);
             pumpControl.SetValue((int)packet[19]);
@@ -95,12 +138,15 @@ namespace FanControl.NzxtKraken
             fanSpeed = new KrakenSensor($"fanrpm-{_serial}", $"Fan - {Name}");
             _container.FanSensors.Add(fanSpeed);
 
-            fanControl = new KrakenControlV3($"fancontrol-{_serial}", $"Fan - {Name}", 30, 0, hidDevice, FanControlHeader);
+            fanControl = new KrakenControlV3($"fancontrol-{_serial}", $"Fan - {Name}", 30, 0, hidDevice, FanControlHeader, pluginLogger);
             _container.ControlSensors.Add(fanControl);
         }
 
         internal override void SetValues(byte[] packet)
         {
+            if (packet == null || packet.Length < 26)
+                return;
+                
             base.SetValues(packet);
             fanSpeed.SetValue(packet[24] << 8 | packet[23]);
             fanControl.SetValue((int)packet[25]);
